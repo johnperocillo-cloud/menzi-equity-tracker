@@ -1012,10 +1012,12 @@ function calcSummary() {
   const remaining = Math.max(0, SETTINGS.totalEquity - totalPaid);
   const pct = Math.min(100, (totalPaid / SETTINGS.totalEquity) * 100);
 
-  // For DUE DATE only: exclude downpayment from monthly count
-  // monthsPaid = how many monthly slots have been paid (ignore the ₱15,000 downpayment)
-  const monthlyOnlyTotal = Math.max(0, totalPaid - SETTINGS.downpayment);
-  const monthsPaid = Math.min(SETTINGS.termMonths, Math.floor(monthlyOnlyTotal / SETTINGS.monthlyPayment + 0.001));
+  // Count actual monthly payment records (exclude downpayment slots)
+  // This ensures partial or rounded amounts don't cause undercounting
+  const monthsPaid = Math.min(
+    SETTINGS.termMonths,
+    payments.filter(p => !p.isDownpayment && Number(p.monthNumber) > 0).length
+  );
 
   const monthsRemaining = Math.ceil(remaining / SETTINGS.monthlyPayment);
   const today = new Date();
