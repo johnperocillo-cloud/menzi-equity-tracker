@@ -839,9 +839,10 @@
 // ============================================================
 const SETTINGS = {
   totalEquity: 460000,
+  downpayment: 15000,         // Pre-paid equity — deducted from balance, NOT a monthly slot
   monthlyPayment: 9583.33,
   termMonths: 48,
-  startDate: new Date('2026-03-12'), // First due date
+  startDate: new Date('2026-03-12'), // Month 1 due date
   clientName: 'MENZI NEW TOWN-MP',
   project: 'MENZI NEW TOWN',
   lot: '4', block: '20', code: 'C002662'
@@ -850,6 +851,17 @@ const SETTINGS = {
 // Initial payment pre-loaded from SOA
 const SEED_PAYMENTS = [
   {
+    id: 'p000',
+    paymentDate: '2026-02-01',
+    amount: 15000.00,
+    receiptNumber: '',
+    notes: 'Down Payment (Equity)',
+    receiptUrl: '',
+    monthNumber: 0,        // 0 = downpayment, not a monthly slot
+    isDownpayment: true,
+    timestamp: new Date('2026-02-01').getTime()
+  },
+  {
     id: 'p001',
     paymentDate: '2026-03-02',
     amount: 9590.00,
@@ -857,6 +869,7 @@ const SEED_PAYMENTS = [
     notes: 'Month 1 payment',
     receiptUrl: '',
     monthNumber: 1,
+    isDownpayment: false,
     timestamp: new Date('2026-03-02').getTime()
   }
 ];
@@ -907,13 +920,17 @@ function saveApiUrl() {
 // ============================================================
 function calcSummary() {
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
-  const remaining = Math.max(0, SETTINGS.totalEquity - totalPaid);
-  const pct = Math.min(100, (totalPaid / SETTINGS.totalEquity) * 100);
-  const monthsPaid = payments.length;
+  // Monthly payments only (exclude downpayment)
+  const monthlyPayments = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
+  const monthlyPaid = monthlyPayments.reduce((s, p) => s + Number(p.amount), 0);
+  // Balance = totalEquity - downpayment - monthly payments
+  const remaining = Math.max(0, SETTINGS.totalEquity - SETTINGS.downpayment - monthlyPaid);
+  const pct = Math.min(100, ((SETTINGS.downpayment + monthlyPaid) / SETTINGS.totalEquity) * 100);
+  const monthsPaid = monthlyPayments.length;  // Only count monthly payments
   const monthsRemaining = Math.ceil(remaining / SETTINGS.monthlyPayment);
   const today = new Date();
 
-  // Next due date
+  // Next due date — based on monthly payments only
   let nextDue = new Date(SETTINGS.startDate);
   nextDue.setMonth(nextDue.getMonth() + monthsPaid);
 
@@ -921,13 +938,15 @@ function calcSummary() {
   const projectedPayoff = new Date(today);
   projectedPayoff.setMonth(projectedPayoff.getMonth() + monthsRemaining);
 
-  return { totalPaid, remaining, pct, monthsPaid, monthsRemaining, nextDue, projectedPayoff };
+  return { totalPaid, monthlyPaid, remaining, pct, monthsPaid, monthsRemaining, nextDue, projectedPayoff };
 }
 
 function getRunningBalance(index) {
-  let bal = SETTINGS.totalEquity;
-  for (let i = 0; i <= index; i++) {
-    bal -= Number(payments[i].amount);
+  // Start from totalEquity minus downpayment
+  let bal = SETTINGS.totalEquity - SETTINGS.downpayment;
+  const monthlyOnly = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
+  for (let i = 0; i <= index && i < monthlyOnly.length; i++) {
+    bal -= Number(monthlyOnly[i].amount);
   }
   return Math.max(0, bal);
 }
@@ -982,7 +1001,7 @@ function renderDashboard() {
       <div class="stat-icon">💰</div>
       <div class="stat-label">Total Paid</div>
       <div class="stat-value green">${fmt(s.totalPaid)}</div>
-      <div class="stat-sub">${payments.length} payment${payments.length !== 1 ? 's' : ''} recorded</div>
+      <div class="stat-sub">${s.monthsPaid} monthly + 1 down payment</div>
     </div>
     <div class="stat-card">
       <div class="stat-icon">📉</div>
@@ -1079,13 +1098,33 @@ function renderHistory() {
 
   // Build schedule with all 48 months
   body.innerHTML = '';
+  // Show downpayment row first if exists
+  const dp = payments.find(p => p.isDownpayment);
+  if (dp) {
+    const dpRow = document.createElement('tr');
+    dpRow.style.background = 'rgba(201,168,76,0.06)';
+    dpRow.innerHTML = `
+      <td><div class="month-num" style="background:rgba(201,168,76,0.3);color:var(--gold)">DP</div></td>
+      <td class="mono">—</td>
+      <td class="mono">${fmtDate(dp.paymentDate)}</td>
+      <td class="amount">${fmt(dp.amount)}</td>
+      <td style="font-size:0.78rem">${dp.receiptNumber || '—'}</td>
+      <td class="balance" style="color:var(--gold)">${fmt(SETTINGS.totalEquity - SETTINGS.downpayment)}</td>
+      <td><span class="badge badge-paid"><span class="badge-dot"></span>Down Payment</span></td>
+      <td>—</td>
+      <td></td>
+    `;
+    body.appendChild(dpRow);
+  }
+  const monthlyPayments = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
   for (let m = 1; m <= SETTINGS.termMonths; m++) {
-    const payment = payments.find(p => p.monthNumber == m);
+    const payment = monthlyPayments.find(p => p.monthNumber == m);
     const dueDate = getDueDate(m);
     const today = new Date();
     if (!payment && dueDate > today && m > payments.length + 2) continue; // Skip far-future rows
 
-    const runBal = payment ? getRunningBalance(payments.indexOf(payment)) : null;
+    const mIdx = payment ? monthlyPayments.indexOf(payment) : -1;
+    const runBal = payment ? getRunningBalance(mIdx) : null;
     const status = payment ? 'paid' : (dueDate < today ? 'overdue' : 'upcoming');
     const badgeMap = {
       paid: '<span class="badge badge-paid"><span class="badge-dot"></span>Paid</span>',
