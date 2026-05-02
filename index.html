@@ -920,17 +920,20 @@ function saveApiUrl() {
 // ============================================================
 function calcSummary() {
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
-  // Monthly payments only (exclude downpayment)
-  const monthlyPayments = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
-  const monthlyPaid = monthlyPayments.reduce((s, p) => s + Number(p.amount), 0);
-  // Balance = totalEquity - downpayment - monthly payments
-  const remaining = Math.max(0, SETTINGS.totalEquity - SETTINGS.downpayment - monthlyPaid);
-  const pct = Math.min(100, ((SETTINGS.downpayment + monthlyPaid) / SETTINGS.totalEquity) * 100);
-  const monthsPaid = monthlyPayments.length;  // Only count monthly payments
+
+  // Remaining balance = totalEquity - everything paid (downpayment included)
+  const remaining = Math.max(0, SETTINGS.totalEquity - totalPaid);
+  const pct = Math.min(100, (totalPaid / SETTINGS.totalEquity) * 100);
+
+  // For DUE DATE only: exclude downpayment from monthly count
+  // monthsPaid = how many monthly slots have been paid (ignore the ₱15,000 downpayment)
+  const monthlyOnlyTotal = Math.max(0, totalPaid - SETTINGS.downpayment);
+  const monthsPaid = Math.min(SETTINGS.termMonths, Math.floor(monthlyOnlyTotal / SETTINGS.monthlyPayment + 0.001));
+
   const monthsRemaining = Math.ceil(remaining / SETTINGS.monthlyPayment);
   const today = new Date();
 
-  // Next due date — based on monthly payments only
+  // Next due date — based on monthly payments count only (downpayment excluded)
   let nextDue = new Date(SETTINGS.startDate);
   nextDue.setMonth(nextDue.getMonth() + monthsPaid);
 
@@ -938,7 +941,7 @@ function calcSummary() {
   const projectedPayoff = new Date(today);
   projectedPayoff.setMonth(projectedPayoff.getMonth() + monthsRemaining);
 
-  return { totalPaid, monthlyPaid, remaining, pct, monthsPaid, monthsRemaining, nextDue, projectedPayoff };
+  return { totalPaid, remaining, pct, monthsPaid, monthsRemaining, nextDue, projectedPayoff };
 }
 
 function getRunningBalance(index) {
@@ -1001,7 +1004,7 @@ function renderDashboard() {
       <div class="stat-icon">💰</div>
       <div class="stat-label">Total Paid</div>
       <div class="stat-value green">${fmt(s.totalPaid)}</div>
-      <div class="stat-sub">${s.monthsPaid} monthly + 1 down payment</div>
+      <div class="stat-sub">${payments.length} payments recorded</div>
     </div>
     <div class="stat-card">
       <div class="stat-icon">📉</div>
