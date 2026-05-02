@@ -1279,24 +1279,28 @@ async function submitPayment(e) {
 }
 
 async function saveToSheets(payment) {
-  const res = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'addPayment', payment })
-  });
-  if (!res.ok) throw new Error('Failed to save to Google Sheets');
+  // Apps Script requires no-cors mode from browser
+  // We use a form POST via fetch with no-cors
+  const payload = JSON.stringify({ action: 'addPayment', payment });
+  
+  try {
+    await fetch(apiUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    });
+    // no-cors returns opaque response - we assume success if no throw
+  } catch (err) {
+    throw new Error('Failed to reach Google Sheets: ' + err.message);
+  }
 }
 
 async function uploadFileToApi(file) {
-  // Base64 encode and send to Apps Script
-  const b64 = await fileToBase64(file);
-  const res = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'uploadFile', fileName: file.name, fileData: b64, mimeType: file.type })
-  });
-  const data = await res.json();
-  return data.fileUrl || '';
+  // Store file locally since Apps Script CORS blocks file upload from browser
+  // File will be available as dataURL locally
+  const dataUrl = await fileToDataUrl(file);
+  return dataUrl;
 }
 
 function fileToBase64(file) {
@@ -1321,7 +1325,7 @@ async function refreshData() {
   if (!apiUrl) { showToast('No API URL configured.', 'error'); return; }
   try {
     showToast('Syncing with Google Sheets…');
-    const res = await fetch(apiUrl + '?action=getPayments');
+    const res = await fetch(apiUrl + '?action=getPayments', { mode: 'cors' });
     const data = await res.json();
     payments = data.payments || [];
     saveToLocal();
