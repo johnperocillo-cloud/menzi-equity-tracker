@@ -676,16 +676,35 @@
     </div>
 
     <div class="card" style="margin-top:20px;">
-      <div class="card-title"><span>ℹ️</span> Google Sheets Integration</div>
-      <p class="section-subtitle">Connect to Google Sheets for cloud sync. Enter your Apps Script Web App URL below.</p>
-      <div class="form-grid">
-        <div class="form-group full">
-          <label class="form-label">Apps Script Web App URL</label>
-          <input type="url" class="form-input" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec" oninput="saveApiUrl()">
+      <div class="card-title"><span>☁️</span> Shared Cloud Storage</div>
+      <p class="section-subtitle">Connect to a free shared storage so you and your wife see the same payments on any device.</p>
+      <div id="binSetupSection">
+        <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.25);border-radius:10px;padding:20px;margin-bottom:20px;">
+          <p style="font-size:0.85rem;color:var(--gold);font-weight:600;margin-bottom:12px;">📋 One-time setup (2 minutes):</p>
+          <ol style="padding-left:18px;color:var(--text-muted);font-size:0.83rem;line-height:2;">
+            <li>Go to <a href="https://jsonbin.io" target="_blank" style="color:var(--gold)">jsonbin.io</a> → Sign up free</li>
+            <li>Click <strong style="color:var(--cream)">+ Create Bin</strong> → paste <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--gold-light)">{"payments":[]}</code> → Save</li>
+            <li>Copy the <strong style="color:var(--cream)">BIN ID</strong> (looks like: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;color:var(--gold-light)">64f3a1b2e3...</code>)</li>
+            <li>Go to <strong style="color:var(--cream)">API Keys</strong> tab → Create key → copy it</li>
+            <li>Paste both below ↓</li>
+          </ol>
         </div>
-      </div>
-      <div class="highlight-box">
-        <p>⚠️ Without a URL, data saves to browser (localStorage). See <strong>Setup Guide</strong> tab for Google Sheets instructions.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">JSONBin API Key (X-Access-Key)</label>
+            <input type="text" class="form-input" id="jsonbinKey" placeholder="$2a$10$..." oninput="saveCloudConfig()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bin ID</label>
+            <input type="text" class="form-input" id="jsonbinBin" placeholder="64f3a1b2e3..." oninput="saveCloudConfig()">
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="connectCloud()" id="connectBtn">☁️ Connect & Sync</button>
+          <button class="btn btn-ghost" onclick="pushToCloud()" id="pushBtn" style="display:none">⬆ Push to Cloud</button>
+          <button class="btn btn-ghost" onclick="pullFromCloud()" id="pullBtn" style="display:none">⬇ Pull from Cloud</button>
+        </div>
+        <div id="cloudStatus" style="margin-top:12px;font-size:0.8rem;color:var(--text-muted);"></div>
       </div>
     </div>
   </section>
@@ -875,18 +894,25 @@ const SEED_PAYMENTS = [
 ];
 
 let payments = [];
-let apiUrl = '';
 let pendingDeleteId = null;
 let selectedFile = null;
+let cloudConfig = { key: '', bin: '' };
+let cloudSyncInterval = null;
 
 // ============================================================
 // INIT
 // ============================================================
 function init() {
-  // Load from localStorage
-  const stored = localStorage.getItem('equityPayments');
-  const storedApi = localStorage.getItem('apiUrl');
+  // Load cloud config
+  const cfg = localStorage.getItem('cloudConfig');
+  if (cfg) {
+    cloudConfig = JSON.parse(cfg);
+    if (cloudConfig.key) document.getElementById('jsonbinKey').value = cloudConfig.key;
+    if (cloudConfig.bin) document.getElementById('jsonbinBin').value = cloudConfig.bin;
+  }
 
+  // Load payments
+  const stored = localStorage.getItem('equityPayments');
   if (stored) {
     payments = JSON.parse(stored);
   } else {
@@ -894,13 +920,16 @@ function init() {
     saveToLocal();
   }
 
-  if (storedApi) {
-    apiUrl = storedApi;
-    document.getElementById('apiUrl').value = apiUrl;
-  }
-
   // Set default date
   document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
+
+  // Auto-pull from cloud if configured
+  if (cloudConfig.key && cloudConfig.bin) {
+    updateSyncBadge('cloud');
+    showCloudButtons(true);
+    pullFromCloud(true); // silent pull on load
+    startAutoSync();
+  }
 
   renderAll();
 }
@@ -909,10 +938,112 @@ function saveToLocal() {
   localStorage.setItem('equityPayments', JSON.stringify(payments));
 }
 
-function saveApiUrl() {
-  apiUrl = document.getElementById('apiUrl').value;
-  localStorage.setItem('apiUrl', apiUrl);
-  document.getElementById('syncBadge').textContent = apiUrl ? '● Google Sheets' : '● Local Storage';
+function saveCloudConfig() {
+  cloudConfig.key = document.getElementById('jsonbinKey').value.trim();
+  cloudConfig.bin = document.getElementById('jsonbinBin').value.trim();
+  localStorage.setItem('cloudConfig', JSON.stringify(cloudConfig));
+}
+
+function updateSyncBadge(mode) {
+  const badge = document.getElementById('syncBadge');
+  if (mode === 'cloud') {
+    badge.textContent = '● Cloud Sync';
+    badge.style.color = 'var(--green)';
+    badge.style.borderColor = 'rgba(76,175,130,0.4)';
+  } else if (mode === 'syncing') {
+    badge.textContent = '↻ Syncing…';
+    badge.style.color = 'var(--gold)';
+  } else {
+    badge.textContent = '● Local Storage';
+    badge.style.color = '';
+    badge.style.borderColor = '';
+  }
+}
+
+function showCloudButtons(show) {
+  document.getElementById('pushBtn').style.display = show ? '' : 'none';
+  document.getElementById('pullBtn').style.display = show ? '' : 'none';
+}
+
+function startAutoSync() {
+  if (cloudSyncInterval) clearInterval(cloudSyncInterval);
+  // Auto-pull every 30 seconds to catch wife's updates
+  cloudSyncInterval = setInterval(() => pullFromCloud(true), 30000);
+}
+
+// ── CLOUD CONNECT ──
+async function connectCloud() {
+  saveCloudConfig();
+  if (!cloudConfig.key || !cloudConfig.bin) {
+    showToast('Please enter both API Key and Bin ID.', 'error');
+    return;
+  }
+  const btn = document.getElementById('connectBtn');
+  btn.innerHTML = '<span class="spinner"></span> Connecting…';
+  btn.disabled = true;
+  try {
+    // Push current local data to cloud
+    await pushToCloud(true);
+    updateSyncBadge('cloud');
+    showCloudButtons(true);
+    startAutoSync();
+    showToast('✓ Connected! Data synced to cloud.', 'success');
+    document.getElementById('cloudStatus').innerHTML =
+      '<span style="color:var(--green)">✓ Cloud storage active — syncing every 30 seconds</span>';
+  } catch(err) {
+    showToast('Connection failed: ' + err.message, 'error');
+    document.getElementById('cloudStatus').innerHTML =
+      '<span style="color:var(--red)">✗ ' + err.message + '</span>';
+  } finally {
+    btn.innerHTML = '☁️ Connect & Sync';
+    btn.disabled = false;
+  }
+}
+
+// ── PUSH to JSONBin ──
+async function pushToCloud(silent = false) {
+  if (!cloudConfig.key || !cloudConfig.bin) return;
+  if (!silent) updateSyncBadge('syncing');
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.bin}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Access-Key': cloudConfig.key
+    },
+    body: JSON.stringify({ payments })
+  });
+  if (!res.ok) throw new Error('Push failed (' + res.status + ')');
+  if (!silent) {
+    updateSyncBadge('cloud');
+    showToast('✓ Pushed to cloud!', 'success');
+  }
+}
+
+// ── PULL from JSONBin ──
+async function pullFromCloud(silent = false) {
+  if (!cloudConfig.key || !cloudConfig.bin) return;
+  if (!silent) updateSyncBadge('syncing');
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.bin}/latest`, {
+      headers: { 'X-Access-Key': cloudConfig.key }
+    });
+    if (!res.ok) throw new Error('Pull failed (' + res.status + ')');
+    const data = await res.json();
+    const cloudPayments = data.record?.payments || [];
+    // Only update if cloud has different data
+    if (JSON.stringify(cloudPayments) !== JSON.stringify(payments)) {
+      payments = cloudPayments;
+      saveToLocal();
+      renderAll();
+      if (!silent) showToast('✓ Pulled latest data from cloud!', 'success');
+    }
+    if (!silent) updateSyncBadge('cloud');
+  } catch(err) {
+    if (!silent) {
+      updateSyncBadge('local');
+      showToast('Pull failed: ' + err.message, 'error');
+    }
+  }
 }
 
 // ============================================================
@@ -1282,9 +1413,7 @@ async function submitPayment(e) {
     let receiptUrl = '';
 
     // If API configured, try uploading
-    if (apiUrl && selectedFile) {
-      receiptUrl = await uploadFileToApi(selectedFile);
-    } else if (selectedFile) {
+    if (selectedFile) {
       // Store as data URL locally
       receiptUrl = await fileToDataUrl(selectedFile);
     }
@@ -1300,17 +1429,24 @@ async function submitPayment(e) {
       timestamp: Date.now()
     };
 
-    // If API configured, save to Sheets
-    if (apiUrl) {
-      await saveToSheets(payment);
-    }
+    // Cloud push handled after payments.push below
 
     payments.push(payment);
     payments.sort((a, b) => a.monthNumber - b.monthNumber);
     saveToLocal();
     renderAll();
     resetForm();
-    showToast('✓ Payment recorded successfully!', 'success');
+    // Push to cloud if configured
+    if (cloudConfig.key && cloudConfig.bin) {
+      try {
+        await pushToCloud(true);
+        showToast('✓ Payment saved & synced to cloud!', 'success');
+      } catch(e) {
+        showToast('✓ Payment saved locally (cloud sync failed)', 'success');
+      }
+    } else {
+      showToast('✓ Payment recorded successfully!', 'success');
+    }
     showPage('history', document.querySelectorAll('.nav-tab')[2]);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
@@ -1321,21 +1457,7 @@ async function submitPayment(e) {
 }
 
 async function saveToSheets(payment) {
-  // Apps Script requires no-cors mode from browser
-  // We use a form POST via fetch with no-cors
-  const payload = JSON.stringify({ action: 'addPayment', payment });
-  
-  try {
-    await fetch(apiUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload
-    });
-    // no-cors returns opaque response - we assume success if no throw
-  } catch (err) {
-    throw new Error('Failed to reach Google Sheets: ' + err.message);
-  }
+  // Replaced by pushToCloud()
 }
 
 async function uploadFileToApi(file) {
@@ -1364,17 +1486,10 @@ function fileToDataUrl(file) {
 }
 
 async function refreshData() {
-  if (!apiUrl) { showToast('No API URL configured.', 'error'); return; }
-  try {
-    showToast('Syncing with Google Sheets…');
-    const res = await fetch(apiUrl + '?action=getPayments', { mode: 'cors' });
-    const data = await res.json();
-    payments = data.payments || [];
-    saveToLocal();
-    renderAll();
-    showToast('✓ Data synced successfully!', 'success');
-  } catch (err) {
-    showToast('Sync failed: ' + err.message, 'error');
+  if (cloudConfig.key && cloudConfig.bin) {
+    await pullFromCloud(false);
+  } else {
+    showToast('No cloud storage configured. Go to Add Payment → Cloud Storage.', 'error');
   }
 }
 
@@ -1415,11 +1530,14 @@ function clearFile() {
 function confirmDelete(id) {
   pendingDeleteId = id;
   document.getElementById('deleteModal').classList.add('open');
-  document.getElementById('confirmDeleteBtn').onclick = () => {
+  document.getElementById('confirmDeleteBtn').onclick = async () => {
     payments = payments.filter(p => p.id !== pendingDeleteId);
     saveToLocal();
     renderAll();
     closeModal('deleteModal');
+    if (cloudConfig.key && cloudConfig.bin) {
+      try { await pushToCloud(true); } catch(e) {}
+    }
     showToast('Payment deleted.', 'error');
   };
 }
