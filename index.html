@@ -890,7 +890,7 @@ function init() {
   // Load payments
   const stored = localStorage.getItem('equityPayments');
   if (stored) {
-    payments = JSON.parse(stored);
+    payments = normalizePayments(JSON.parse(stored));
   } else {
     payments = [...SEED_PAYMENTS];
     saveToLocal();
@@ -909,6 +909,23 @@ function init() {
 
 function saveToLocal() {
   localStorage.setItem('equityPayments', JSON.stringify(payments));
+}
+
+// Detect and fix downpayment records that came from Sheets without correct flags
+function normalizePayments(list) {
+  return list.map(p => {
+    const payDate = new Date(p.paymentDate);
+    const startDate = new Date(SETTINGS.startDate);
+    // If paid BEFORE Month 1 due date, it's the downpayment — not a monthly slot
+    if (!p.isDownpayment && payDate < startDate) {
+      return { ...p, isDownpayment: true, monthNumber: 0 };
+    }
+    // Also catch records explicitly flagged or with monthNumber 0
+    if (p.monthNumber == 0 || p.isDownpayment) {
+      return { ...p, isDownpayment: true, monthNumber: 0 };
+    }
+    return p;
+  });
 }
 
 function saveCloudConfig() {
@@ -980,7 +997,7 @@ async function pullFromCloud(silent = false) {
     const data = await res.json();
     const sheetPayments = data.payments || [];
     if (sheetPayments.length > 0 && JSON.stringify(sheetPayments) !== JSON.stringify(payments)) {
-      payments = sheetPayments;
+      payments = normalizePayments(sheetPayments);
       saveToLocal();
       renderAll();
       if (!silent) showToast('✓ Synced from Google Sheets!', 'success');
@@ -1207,6 +1224,11 @@ function renderHistory() {
       <td></td>
     `;
     body.appendChild(dpRow);
+
+    // Visual divider to separate downpayment from monthly schedule
+    const divRow = document.createElement('tr');
+    divRow.innerHTML = `<td colspan="9" style="padding:0;"><div style="border-top:1.5px dashed rgba(201,168,76,0.3);margin:2px 0;font-size:0.7rem;text-align:center;color:var(--text-muted);padding:3px 0;letter-spacing:0.08em;">— MONTHLY AMORTIZATION SCHEDULE —</div></td>`;
+    body.appendChild(divRow);
   }
   const monthlyPayments = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
   for (let m = 1; m <= SETTINGS.termMonths; m++) {
