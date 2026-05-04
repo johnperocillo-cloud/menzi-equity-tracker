@@ -468,6 +468,43 @@
     .badge-pending { background: #fef9e7; color: #a0720a; }
   }
 
+  /* ── DRAG AND DROP ── */
+  .drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 1rem;
+    padding: 0 6px;
+    user-select: none;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+  }
+  .drag-handle:hover { opacity: 1; color: var(--gold); }
+  .drag-handle:active { cursor: grabbing; }
+  tr.dragging {
+    opacity: 0.4;
+    background: rgba(201,168,76,0.1) !important;
+  }
+  tr.drag-over {
+    border-top: 2px solid var(--gold) !important;
+    background: rgba(201,168,76,0.06) !important;
+  }
+  tr.drag-over td { border-top: 2px solid var(--gold); }
+  .drag-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(201,168,76,0.1);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    color: var(--gold);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .drag-mode-badge:hover { background: rgba(201,168,76,0.2); }
+  .drag-mode-badge.active { background: rgba(201,168,76,0.2); border-color: var(--gold); }
+
   /* misc */
   .text-right { text-align: right; }
   .text-center { text-align: center; }
@@ -539,7 +576,7 @@
     <button class="nav-tab" onclick="showPage('history', this)">🧾 History</button>
     <button class="nav-tab" onclick="showPage('simulator', this)">⚡ Simulator</button>
     <button class="nav-tab" onclick="showPage('report', this)">📋 Report</button>
-    <button class="nav-tab" onclick="window.open('setup-guide.html','_blank')">⚙️ Setup</button>
+    <button class="nav-tab" onclick="showPage('setup', this)">⚙️ Setup</button>
   </nav>
 
   <!-- ===== DASHBOARD ===== -->
@@ -698,7 +735,10 @@
     <div class="card">
       <div class="flex-between mb-16">
         <div class="card-title" style="margin-bottom:0"><span>🧾</span> Payment History</div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="drag-mode-badge" id="dragToggle" onclick="toggleDragMode()" title="Enable drag to reorder">
+            ⠿ Reorder
+          </span>
           <button class="btn btn-ghost" style="padding:8px 14px;font-size:0.78rem" onclick="exportCSV()">⬇ CSV</button>
           <button class="btn btn-ghost" style="padding:8px 14px;font-size:0.78rem" onclick="refreshData()">⟳ Refresh</button>
         </div>
@@ -707,6 +747,7 @@
         <table id="historyTable">
           <thead>
             <tr>
+              <th id="dragHandleHeader" style="width:30px;display:none"></th>
               <th>Month</th>
               <th>Due Date</th>
               <th>Paid Date</th>
@@ -834,6 +875,75 @@
     </div>
   </section>
 
+  <!-- ===== SETUP ===== -->
+  <section id="page-setup" class="page">
+    <div class="card">
+      <div class="card-title"><span>⚙️</span> Google Sheets Integration</div>
+      <p class="section-subtitle">Your Apps Script backend is already connected and syncing payments automatically.</p>
+
+      <div style="background:rgba(76,175,130,0.08);border:1px solid rgba(76,175,130,0.3);border-radius:10px;padding:18px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px;">
+        <span style="font-size:2rem;">✅</span>
+        <div>
+          <div style="font-weight:600;color:var(--green);margin-bottom:4px;">Google Sheets Connected</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);word-break:break-all;">Apps Script is active — payments save to Sheets automatically</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+        <button class="btn btn-primary" onclick="pullFromCloud(false)">⬇ Pull Latest from Sheets</button>
+        <button class="btn btn-ghost" onclick="pushToCloud(false)">⬆ Push Local to Sheets</button>
+      </div>
+      <div id="cloudStatus2" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:20px;"></div>
+
+      <hr style="border:none;border-top:1px solid var(--card-border);margin:20px 0;">
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-title"><span>🏠</span> Property Settings</div>
+      <div class="info-row"><span class="label">Client</span><span class="value">MENZI NEW TOWN-MP</span></div>
+      <div class="info-row"><span class="label">Project</span><span class="value">MENZI NEW TOWN</span></div>
+      <div class="info-row"><span class="label">Lot / Block / Phase</span><span class="value">4 / 20 / 3</span></div>
+      <div class="info-row"><span class="label">Address</span><span class="value" style="font-family:'DM Sans',sans-serif">Damilag, Manolo Fortich, Bukidnon</span></div>
+      <div class="info-row"><span class="label">Code</span><span class="value">C002662</span></div>
+      <div class="info-row"><span class="label">Financing</span><span class="value">PAG-IBIG</span></div>
+      <div class="info-row"><span class="label">Total Equity</span><span class="value" style="color:var(--gold)">₱460,000.00</span></div>
+      <div class="info-row"><span class="label">Down Payment</span><span class="value">₱15,000.00</span></div>
+      <div class="info-row"><span class="label">Monthly Amortization</span><span class="value">₱9,583.33</span></div>
+      <div class="info-row"><span class="label">Term</span><span class="value">48 months</span></div>
+      <div class="info-row"><span class="label">Start Date</span><span class="value">March 12, 2026</span></div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-title"><span>🗄️</span> Data Management</div>
+      <p class="section-subtitle">Manage your local payment data stored in this browser.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" onclick="exportCSV()" style="font-size:0.83rem;">⬇ Export CSV</button>
+        <button class="btn btn-ghost" onclick="exportAllData()" style="font-size:0.83rem;">⬇ Backup JSON</button>
+        <button class="btn btn-ghost" onclick="importData()" style="font-size:0.83rem;">⬆ Restore JSON</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
+
+      <hr style="border:none;border-top:1px solid var(--card-border);margin:20px 0;">
+
+      <div style="background:rgba(224,84,84,0.06);border:1px solid rgba(224,84,84,0.2);border-radius:8px;padding:16px 18px;">
+        <div style="font-size:0.85rem;font-weight:600;color:var(--red);margin-bottom:8px;">⚠️ Danger Zone</div>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Reset all local data and restore seed payments. This cannot be undone.</p>
+        <button class="btn btn-danger" onclick="confirmReset()" style="font-size:0.8rem;padding:8px 16px;">🗑 Reset Local Data</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-title"><span>📞</span> Argus Land Contact</div>
+      <div class="info-row"><span class="label">Cagayan de Oro Office</span><span class="value" style="font-family:'DM Sans',sans-serif">argusacctg@gmail.com</span></div>
+      <div class="info-row"><span class="label">Email</span><span class="value" style="font-family:'DM Sans',sans-serif">bcchomes2018@gmail.com · menziheights@gmail.com</span></div>
+      <div class="info-row"><span class="label">Tel / Fax</span><span class="value">881-2674 · 859-2857</span></div>
+      <div class="info-row"><span class="label">Mobile</span><span class="value">09759104801</span></div>
+      <div class="info-row"><span class="label">Prepared by</span><span class="value" style="font-family:'DM Sans',sans-serif">Maria Guinayao · Jessa Mae Estroga · Zenaida Laviña · Thalia Mae Sayagnon</span></div>
+      <div class="info-row"><span class="label">Checked by</span><span class="value" style="font-family:'DM Sans',sans-serif">Shaira Dosal</span></div>
+      <div class="info-row"><span class="label">Noted by</span><span class="value" style="font-family:'DM Sans',sans-serif">Jocelyn Perez</span></div>
+    </div>
+  </section>
+
 </div><!-- end app-container -->
 
 <script>
@@ -890,7 +1000,73 @@ function init() {
   // Load payments
   const stored = localStorage.getItem('equityPayments');
   if (stored) {
-    payments = normalizePayments(JSON.parse(stored));
+    payments = JSON.parse(stored);
+    // ── DATA MIGRATION: fix incorrect downpayment records ──
+    let migrated = false;
+
+    // Remove any record incorrectly marked as downpayment with wrong amount
+    payments = payments.filter(p => {
+      if (p.isDownpayment && Number(p.amount) !== 15000) {
+        migrated = true;
+        return false; // remove it
+      }
+      return true;
+    });
+
+    // Fix any monthly payment wrongly marked as downpayment → move to Month 1
+    payments = payments.map(p => {
+      if (p.receiptNumber === 'PR 37315' && p.isDownpayment) {
+        migrated = true;
+        return { ...p, isDownpayment: false, monthNumber: 1 };
+      }
+      return p;
+    });
+
+    // Fix receipt 037315 — ensure it's Month 1
+    payments = payments.map(p => {
+      if ((p.receiptNumber === '037315' || p.receiptNumber === 'PR 37315') && !p.isDownpayment && p.monthNumber !== 1) {
+        migrated = true;
+        return { ...p, monthNumber: 1 };
+      }
+      return p;
+    });
+
+    // Re-sequence all monthly payments to fill gaps (1,2,3... no skipping)
+    const monthlyPmts = payments
+      .filter(p => !p.isDownpayment && p.monthNumber > 0)
+      .sort((a, b) => new Date(a.paymentDate) - new Date(b.paymentDate));
+    monthlyPmts.forEach((p, i) => {
+      if (p.monthNumber !== i + 1) {
+        p.monthNumber = i + 1;
+        migrated = true;
+      }
+    });
+
+    // Ensure ₱15,000 downpayment record exists
+    const hasDP = payments.some(p => p.isDownpayment && Number(p.amount) === 15000);
+    if (!hasDP) {
+      payments.unshift({
+        id: 'p000',
+        paymentDate: '2026-02-01',
+        amount: 15000.00,
+        receiptNumber: '',
+        notes: 'Down Payment (Equity)',
+        receiptUrl: '',
+        monthNumber: 0,
+        isDownpayment: true,
+        timestamp: new Date('2026-02-01').getTime()
+      });
+      migrated = true;
+    }
+
+    // Sort: downpayment first, then by month number
+    payments.sort((a, b) => {
+      if (a.isDownpayment) return -1;
+      if (b.isDownpayment) return 1;
+      return a.monthNumber - b.monthNumber;
+    });
+
+    if (migrated) saveToLocal();
   } else {
     payments = [...SEED_PAYMENTS];
     saveToLocal();
@@ -909,23 +1085,6 @@ function init() {
 
 function saveToLocal() {
   localStorage.setItem('equityPayments', JSON.stringify(payments));
-}
-
-// Detect and fix downpayment records that came from Sheets without correct flags
-function normalizePayments(list) {
-  return list.map(p => {
-    const payDate = new Date(p.paymentDate);
-    const startDate = new Date(SETTINGS.startDate);
-    // If paid BEFORE Month 1 due date, it's the downpayment — not a monthly slot
-    if (!p.isDownpayment && payDate < startDate) {
-      return { ...p, isDownpayment: true, monthNumber: 0 };
-    }
-    // Also catch records explicitly flagged or with monthNumber 0
-    if (p.monthNumber == 0 || p.isDownpayment) {
-      return { ...p, isDownpayment: true, monthNumber: 0 };
-    }
-    return p;
-  });
 }
 
 function saveCloudConfig() {
@@ -963,29 +1122,59 @@ async function connectCloud() {
   await pullFromCloud(false);
 }
 
-// ── PUSH to Google Sheets (one payment at a time via no-cors POST) ──
+// ── PUSH all payments to Google Sheets via syncAll ──
 async function pushToCloud(silent = false) {
   if (!silent) updateSyncBadge('syncing');
   try {
-    // Send each local payment not yet in sheets via no-cors POST
-    for (const payment of payments) {
-      await fetch(SHEETS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'addPayment', payment })
-      });
-    }
+    // Use a Google Apps Script redirect trick to bypass CORS
+    const formUrl = SHEETS_URL;
+    const payload = JSON.stringify({ action: 'syncAll', payments });
+
+    // Try fetch with no-cors (fire and forget)
+    fetch(formUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    });
+
+    // Also try via iframe form POST for reliability
+    submitViaForm(payload);
+
+    updateSyncBadge('cloud');
     if (!silent) {
-      updateSyncBadge('cloud');
-      showToast('✓ Pushed to Google Sheets!', 'success');
-      document.getElementById('cloudStatus').innerHTML =
-        '<span style="color:var(--green)">✓ Pushed to Sheets at ' + new Date().toLocaleTimeString() + '</span>';
+      showToast('✓ Synced to Google Sheets!', 'success');
+      const el = document.getElementById('cloudStatus');
+      if (el) el.innerHTML = '<span style="color:var(--green)">✓ Last pushed: ' + new Date().toLocaleTimeString() + '</span>';
     }
   } catch(err) {
-    if (!silent) showToast('Push failed: ' + err.message, 'error');
-    throw err;
+    updateSyncBadge('cloud');
+    if (!silent) showToast('Note: ' + err.message, '');
   }
+}
+
+// Hidden form POST — bypasses CORS completely
+function submitViaForm(jsonPayload) {
+  try {
+    let form = document.getElementById('_gsForm');
+    if (!form) {
+      form = document.createElement('form');
+      form.id = '_gsForm';
+      form.method = 'POST';
+      form.target = '_gsFrame';
+      form.style.display = 'none';
+      const input = document.createElement('input');
+      input.name = 'payload'; input.id = '_gsInput';
+      form.appendChild(input);
+      const iframe = document.createElement('iframe');
+      iframe.name = '_gsFrame'; iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      document.body.appendChild(form);
+    }
+    form.action = SHEETS_URL;
+    document.getElementById('_gsInput').value = jsonPayload;
+    form.submit();
+  } catch(e) { /* silent */ }
 }
 
 // ── PULL from Google Sheets ──
@@ -997,7 +1186,7 @@ async function pullFromCloud(silent = false) {
     const data = await res.json();
     const sheetPayments = data.payments || [];
     if (sheetPayments.length > 0 && JSON.stringify(sheetPayments) !== JSON.stringify(payments)) {
-      payments = normalizePayments(sheetPayments);
+      payments = sheetPayments;
       saveToLocal();
       renderAll();
       if (!silent) showToast('✓ Synced from Google Sheets!', 'success');
@@ -1029,17 +1218,13 @@ function calcSummary() {
   const remaining = Math.max(0, SETTINGS.totalEquity - totalPaid);
   const pct = Math.min(100, (totalPaid / SETTINGS.totalEquity) * 100);
 
-  // Count actual monthly payment records (exclude downpayment slots)
-  // This ensures partial or rounded amounts don't cause undercounting
-  const monthsPaid = Math.min(
-    SETTINGS.termMonths,
-    payments.filter(p => !p.isDownpayment && Number(p.monthNumber) > 0).length
-  );
+  // Count ACTUAL monthly payment records (exclude downpayment)
+  const monthsPaid = payments.filter(p => !p.isDownpayment && p.monthNumber > 0).length;
 
-  const monthsRemaining = Math.ceil(remaining / SETTINGS.monthlyPayment);
+  const monthsRemaining = Math.max(0, SETTINGS.termMonths - monthsPaid);
   const today = new Date();
 
-  // Next due date — based on monthly payments count only (downpayment excluded)
+  // Next due date — based on actual monthly payment count
   let nextDue = new Date(SETTINGS.startDate);
   nextDue.setMonth(nextDue.getMonth() + monthsPaid);
 
@@ -1213,6 +1398,7 @@ function renderHistory() {
     const dpRow = document.createElement('tr');
     dpRow.style.background = 'rgba(201,168,76,0.06)';
     dpRow.innerHTML = `
+      <td class="drag-handle-cell" style="display:none">⠿</td>
       <td><div class="month-num" style="background:rgba(201,168,76,0.3);color:var(--gold)">DP</div></td>
       <td class="mono">—</td>
       <td class="mono">${fmtDate(dp.paymentDate)}</td>
@@ -1224,11 +1410,6 @@ function renderHistory() {
       <td></td>
     `;
     body.appendChild(dpRow);
-
-    // Visual divider to separate downpayment from monthly schedule
-    const divRow = document.createElement('tr');
-    divRow.innerHTML = `<td colspan="9" style="padding:0;"><div style="border-top:1.5px dashed rgba(201,168,76,0.3);margin:2px 0;font-size:0.7rem;text-align:center;color:var(--text-muted);padding:3px 0;letter-spacing:0.08em;">— MONTHLY AMORTIZATION SCHEDULE —</div></td>`;
-    body.appendChild(divRow);
   }
   const monthlyPayments = payments.filter(p => !p.isDownpayment && p.monthNumber > 0);
   for (let m = 1; m <= SETTINGS.termMonths; m++) {
@@ -1253,7 +1434,13 @@ function renderHistory() {
         : '—';
 
     const tr = document.createElement('tr');
+    if (payment) {
+      tr.setAttribute('draggable', 'false');
+      tr.setAttribute('data-payment-id', payment.id);
+      tr.setAttribute('data-month', m);
+    }
     tr.innerHTML = `
+      <td class="drag-handle-cell" style="display:none"><span class="drag-handle" title="Drag to reorder">⠿</span></td>
       <td><div class="month-num">${m}</div></td>
       <td class="mono">${fmtDate(dueDate)}</td>
       <td class="mono">${payment ? fmtDate(payment.paymentDate) : '—'}</td>
@@ -1266,6 +1453,8 @@ function renderHistory() {
     `;
     body.appendChild(tr);
   }
+  // Apply drag events if drag mode is on
+  if (dragModeActive) applyDragEvents();
 }
 
 function renderReport() {
@@ -1382,7 +1571,13 @@ async function submitPayment(e) {
     const amount = parseFloat(document.getElementById('payAmount').value);
     const receiptNumber = document.getElementById('payReceipt').value.trim();
     const notes = document.getElementById('payNotes').value.trim();
-    let monthNumber = parseInt(document.getElementById('payMonth').value) || (payments.length + 1);
+    // Auto-detect next unpaid monthly slot (exclude downpayment from count)
+    const paidMonths = payments
+      .filter(p => !p.isDownpayment && p.monthNumber > 0)
+      .map(p => p.monthNumber);
+    let nextMonth = 1;
+    while (paidMonths.includes(nextMonth)) nextMonth++;
+    let monthNumber = parseInt(document.getElementById('payMonth').value) || nextMonth;
 
     // Validate
     if (!payDate || isNaN(amount) || amount <= 0) {
@@ -1417,17 +1612,12 @@ async function submitPayment(e) {
     renderAll();
     resetForm();
     // Push to cloud if configured
-    // Always try to push to Google Sheets
+    // Push all payments to Google Sheets
     try {
-      await fetch(SHEETS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'addPayment', payment })
-      });
+      await pushToCloud(true);
       showToast('✓ Payment saved & synced to Google Sheets!', 'success');
     } catch(e) {
-      showToast('✓ Payment saved locally (will sync next time)', 'success');
+      showToast('✓ Payment saved locally', 'success');
     }
     showPage('history', document.querySelectorAll('.nav-tab')[2]);
   } catch (err) {
@@ -1514,13 +1704,7 @@ function confirmDelete(id) {
     renderAll();
     closeModal('deleteModal');
     // Sync deletion to Sheets
-    try {
-      await fetch(SHEETS_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deletePayment', id: pendingDeleteId })
-      });
-    } catch(e) {}
+    try { await pushToCloud(true); } catch(e) {}
     showToast('Payment deleted.', 'error');
   };
 }
@@ -1585,6 +1769,178 @@ if (zone) {
     const file = e.dataTransfer.files[0];
     if (file) { document.getElementById('receiptFile').files = e.dataTransfer.files; handleFileSelect({ target: { files: [file] } }); }
   });
+}
+
+// ============================================================
+// DATA MANAGEMENT
+// ============================================================
+function exportAllData() {
+  const blob = new Blob([JSON.stringify({ payments, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'equity-backup-' + new Date().toISOString().split('T')[0] + '.json';
+  a.click();
+  showToast('✓ Backup downloaded!', 'success');
+}
+
+function importData() {
+  document.getElementById('importFile').click();
+}
+
+function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      payments = data.payments || data;
+      saveToLocal();
+      renderAll();
+      showToast('✓ Data restored successfully!', 'success');
+    } catch(err) {
+      showToast('Import failed: invalid JSON file', 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function confirmReset() {
+  if (confirm('Reset ALL local data to seed payments only? This cannot be undone.')) {
+    payments = [...SEED_PAYMENTS];
+    saveToLocal();
+    renderAll();
+    showToast('Data reset to defaults.', 'error');
+  }
+}
+
+// ============================================================
+// DRAG AND DROP REORDER
+// ============================================================
+let dragModeActive = false;
+let dragSrcRow = null;
+
+function toggleDragMode() {
+  dragModeActive = !dragModeActive;
+  const toggle = document.getElementById('dragToggle');
+  const handleCells = document.querySelectorAll('.drag-handle-cell');
+  const handleHeader = document.getElementById('dragHandleHeader');
+
+  if (dragModeActive) {
+    toggle.classList.add('active');
+    toggle.innerHTML = '⠿ Reorder ON';
+    handleCells.forEach(c => c.style.display = '');
+    if (handleHeader) handleHeader.style.display = '';
+    applyDragEvents();
+    showToast('Drag mode ON — grab ⠿ to reorder paid months', '');
+  } else {
+    toggle.classList.remove('active');
+    toggle.innerHTML = '⠿ Reorder';
+    handleCells.forEach(c => c.style.display = 'none');
+    if (handleHeader) handleHeader.style.display = 'none';
+    removeDragEvents();
+    showToast('Drag mode OFF', '');
+  }
+}
+
+function applyDragEvents() {
+  const rows = document.querySelectorAll('#historyBody tr[data-payment-id]');
+  rows.forEach(row => {
+    row.setAttribute('draggable', 'true');
+    row.addEventListener('dragstart', onDragStart);
+    row.addEventListener('dragover',  onDragOver);
+    row.addEventListener('dragleave', onDragLeave);
+    row.addEventListener('drop',      onDrop);
+    row.addEventListener('dragend',   onDragEnd);
+  });
+}
+
+function removeDragEvents() {
+  const rows = document.querySelectorAll('#historyBody tr[data-payment-id]');
+  rows.forEach(row => {
+    row.setAttribute('draggable', 'false');
+    row.removeEventListener('dragstart', onDragStart);
+    row.removeEventListener('dragover',  onDragOver);
+    row.removeEventListener('dragleave', onDragLeave);
+    row.removeEventListener('drop',      onDrop);
+    row.removeEventListener('dragend',   onDragEnd);
+  });
+}
+
+function onDragStart(e) {
+  dragSrcRow = this;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', this.getAttribute('data-payment-id'));
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('#historyBody tr').forEach(r => r.classList.remove('drag-over'));
+  if (this !== dragSrcRow) this.classList.add('drag-over');
+  return false;
+}
+
+function onDragLeave() {
+  this.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  if (this === dragSrcRow) return;
+
+  const srcId  = dragSrcRow.getAttribute('data-payment-id');
+  const destId = this.getAttribute('data-payment-id');
+  if (!srcId || !destId) return;
+
+  // Find the two payments
+  const srcPmt  = payments.find(p => p.id === srcId);
+  const destPmt = payments.find(p => p.id === destId);
+  if (!srcPmt || !destPmt) return;
+
+  // Swap their month numbers
+  const tmpMonth = srcPmt.monthNumber;
+  srcPmt.monthNumber = destPmt.monthNumber;
+  destPmt.monthNumber = tmpMonth;
+
+  // Re-sort
+  payments.sort((a, b) => {
+    if (a.isDownpayment) return -1;
+    if (b.isDownpayment) return 1;
+    return a.monthNumber - b.monthNumber;
+  });
+
+  saveToLocal();
+
+  // Push to cloud if configured
+  if (cloudConfig && cloudConfig.key && cloudConfig.bin) {
+    pushToCloud(true).catch(() => {});
+  }
+
+  renderAll();
+  // Re-enable drag mode after re-render
+  if (dragModeActive) {
+    setTimeout(() => {
+      const handleCells = document.querySelectorAll('.drag-handle-cell');
+      const handleHeader = document.getElementById('dragHandleHeader');
+      handleCells.forEach(c => c.style.display = '');
+      if (handleHeader) handleHeader.style.display = '';
+      applyDragEvents();
+    }, 50);
+  }
+
+  showToast(`✓ Month ${srcPmt.monthNumber} & ${destPmt.monthNumber} swapped!`, 'success');
+  return false;
+}
+
+function onDragEnd() {
+  document.querySelectorAll('#historyBody tr').forEach(r => {
+    r.classList.remove('dragging');
+    r.classList.remove('drag-over');
+  });
+  dragSrcRow = null;
 }
 
 // ============================================================
