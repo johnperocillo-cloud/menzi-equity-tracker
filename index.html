@@ -1177,35 +1177,89 @@ function submitViaForm(jsonPayload) {
   } catch(e) { /* silent */ }
 }
 
-// ── PULL from Google Sheets ──
+// ── PULL from Google Sheets via public CSV (no CORS issues) ──
 async function pullFromCloud(silent = false) {
   if (!silent) updateSyncBadge('syncing');
+  const csvUrl = 'https://docs.google.com/spreadsheets/d/1XyOADPQnRnMfbzOO3raXir_nJqOizp4uKmqplYsNJ68/export?format=csv&sheet=Payments&t=' + Date.now();
   try {
-    const res = await fetch(SHEETS_URL + '?action=getPayments', { mode: 'cors' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    const sheetPayments = data.payments || [];
-    if (sheetPayments.length > 0 && JSON.stringify(sheetPayments) !== JSON.stringify(payments)) {
-      payments = sheetPayments;
-      saveToLocal();
-      renderAll();
-      if (!silent) showToast('✓ Synced from Google Sheets!', 'success');
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error('Sheet not public or not found');
+    const csv = await res.text();
+    const sheetPayments = parseCSVToPayments(csv);
+
+    if (sheetPayments.length > 0) {
+      // Merge: keep local + add any from sheet not in local
+      const merged = mergePayments(payments, sheetPayments);
+      if (JSON.stringify(merged) !== JSON.stringify(payments)) {
+        payments = merged;
+        saveToLocal();
+        renderAll();
+        if (!silent) showToast('✓ Synced ' + sheetPayments.length + ' payments from Sheets!', 'success');
+      } else {
+        if (!silent) showToast('✓ Already up to date!', 'success');
+      }
     }
     updateSyncBadge('cloud');
-    if (!silent) {
-      document.getElementById('cloudStatus').innerHTML =
-        '<span style="color:var(--green)">✓ Last synced: ' + new Date().toLocaleTimeString() + '</span>';
-    }
+    const el = document.getElementById('cloudStatus');
+    if (el) el.innerHTML = '<span style="color:var(--green)">✓ Last synced: ' + new Date().toLocaleTimeString() + '</span>';
   } catch(err) {
-    // GET to Apps Script can fail due to CORS in some browsers
-    // Fall back gracefully to local data
     if (!silent) {
-      showToast('Sync note: Using local data (' + err.message + ')', '');
-      document.getElementById('cloudStatus').innerHTML =
-        '<span style="color:var(--amber)">⚠ Using local data — payments still save to Sheets via POST</span>';
+      showToast('Pull failed: ' + err.message + ' — Make sure Sheet is set to public Viewer', 'error');
+      const el = document.getElementById('cloudStatus');
+      if (el) el.innerHTML = '<span style="color:var(--red)">✗ ' + err.message + ' — Share sheet as public Viewer</span>';
     }
     updateSyncBadge('cloud');
   }
+}
+
+// Parse CSV from Google Sheets into payment objects
+function parseCSVToPayments(csv) {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  const payments = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (!cols[0]) continue; // skip empty rows
+    payments.push({
+      id:            cols[0] || '',
+      paymentDate:   cols[1] || '',
+      amount:        parseFloat(cols[2]) || 0,
+      receiptNumber: cols[3] || '',
+      notes:         cols[4] || '',
+      receiptUrl:    cols[5] || '',
+      runningBalance:parseFloat(cols[6]) || 0,
+      monthNumber:   parseInt(cols[7]) || 0,
+      isDownpayment: cols[8] === 'TRUE' || cols[8] === 'true',
+      timestamp:     parseInt(cols[9]) || Date.now(),
+    });
+  }
+  return payments;
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let c of line) {
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function mergePayments(local, remote) {
+  const merged = [...remote]; // Start with remote as source of truth
+  // Add any local payments not in remote (pending sync)
+  local.forEach(lp => {
+    if (!merged.find(rp => rp.id === lp.id)) merged.push(lp);
+  });
+  merged.sort((a,b) => {
+    if (a.isDownpayment) return -1;
+    if (b.isDownpayment) return 1;
+    return a.monthNumber - b.monthNumber;
+  });
+  return merged;
 }
 
 // ============================================================
